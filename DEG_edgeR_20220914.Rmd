@@ -1,0 +1,161 @@
+---
+title: "edgeR"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(edgeR)
+library(tidyverse)
+library(ggplot2)
+#library(showtext)
+library(ggrepel)
+library(extrafont)
+```
+
+```{r cars}
+total <- read.table("C:/Users/36461/Desktop/output.matrix")
+
+```
+
+```{r cars}
+total_2 <- total %>%
+  mutate(L02_103_rsem.genes.results+L02_104_rsem.genes.results)
+a_1_ck <- total_2[,c(29:31,18,20,22)]
+
+group <- factor(c(rep("Treat",3),rep("Control",3)))
+```
+
+
+```{r pressure, echo=FALSE}
+y <- DGEList(counts = a_1_ck, genes = rownames(a_1_ck), group = group)
+
+keep <- rowSums(cpm(y)>1) >= 1
+y <- y[keep,,keep.lib.sizes=FALSE]
+##TMM 标准化
+y <- calcNormFactors(y)
+
+bcv <- 0.2
+et <- exactTest(y, dispersion=bcv^2)
+topTags(et)
+summary(de <- decideTestsDGE(et))
+
+png('0h_vs_2h_MAplot.png')
+detags <- rownames(y)[as.logical(de)];
+plotSmear(et, de.tags=detags)
+abline(h=c(-4, 4), col="blue");
+dev.off()
+
+DE <- et$table
+res <- DE
+head(DE)
+res$FDRP <- p.adjust(res$PValue,method = "fdr",n=length(res$PValue))
+#res$logP <- -log10(res$FDRP)
+head(res)
+diffsig <- res[(res$FDRP < 0.01 & abs(res$logFC) > 2),]
+dim(diffsig)
+## 新增一列，标显著性
+res$Group <- "Not"
+######
+res$Group[which((res$FDRP < 0.01) & (res$logFC > 2))] = "Up"
+res$Group[which((res$FDRP < 0.01 ) & (res$logFC < -2))] = "Down"
+#### 查看DE数目
+table(res$Group)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+output_up_SD <- res %>%
+  filter(Group=='Up')
+output_down_SD <- res %>%
+  filter(Group=='Down')
+```
+
+```{r}
+ls_up <- list(output_up_A,output_up_a1,output_up_a2,output_up_B,output_up_C,output_up_D,output_up_E,output_up_F,
+           output_up_MEO,output_up_OH,output_up_SD,output_up_SD1)
+ls_up <- list(output_up_A,output_up_a1,output_up_a2,output_up_B,output_up_C,output_up_D,output_up_E,output_up_F,
+           output_up_MEO,output_up_OH,output_up_SD,output_up_SD1)
+```
+
+```{r}
+#dataset <- read.table('D:/BIOINFO/VolcanoPlot/dataset_volcano.txt',header = TRUE)
+# the structure should be like [gene,logFC,P.Value,change,label],label could be included or not
+dataset <- data.frame(rownames(res),res$logFC,res$PValue,res$Group)
+colnames(dataset) <- c('gene','logFC','P.Value','change')
+
+# 设置pvalue和logFC的阈值
+cut_off_pvalue =  0.01
+cut_off_logFC = 1
+# 根据阈值分别为上调基因设置‘up’，下调基因设置‘Down’，无差异设置‘Stable’，保存到change列
+# 这里的change列用来设置火山图点的颜色
+dataset$change = ifelse(dataset$P.Value < cut_off_pvalue & abs(dataset$logFC) >= cut_off_logFC,
+                        ifelse(dataset$logFC> cut_off_logFC ,'Up','Down'),
+                        'Stable')
+# 绘制火山图====================================
+
+#font_add('TNM','cambria.ttc')
+TNM<-'serif'
+
+
+# 添加点标识====================================
+dataset$label = ifelse(dataset$P.Value < cut_off_pvalue & abs(dataset$logFC) >= 5, as.character(dataset$gene),"")
+
+ggplot(dataset,aes(x = logFC,y = -log10(P.Value),colour=change)) +
+  geom_point(alpha=0.7, size=1.5) +
+  scale_color_manual(values=c("#546de5", "#d2dae2","#ff4757"))+
+ 
+  # 辅助线
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = -log10(cut_off_pvalue),lty=4,col="black",lwd=0.8) +
+  #geom_line(aes(x = xData, y = yData, color = factor(groupName))) + xlab(xName) + ylab(yName)+
+  # 坐标轴
+  labs(x="log2(fold change)",
+       y="-log10 (p-value)")+
+  theme_bw()+
+  xlim(-10,10)+
+  theme(axis.title.x = element_text(family = TNM, face = "bold", size = 18),
+        axis.title.y = element_text(family = TNM, face = "bold", size = 18),
+  )+
+  theme(plot.title = element_text(hjust = 0.5,family = TNM, face = "bold", size = 18),
+        legend.position="right",
+        legend.title = element_blank(),
+        legend.text = element_text(hjust = 0.5,family = TNM, face = "bold", size = 15),
+        axis.text.x=element_text(hjust = 0.5,family = TNM, face = "bold", size = 18),
+        axis.text.y=element_text(hjust = 0.5,family = TNM, face = "bold", size = 18),
+        panel.grid.major = element_line(colour = "white"),
+        panel.grid.minor = element_line(colour = "white", size = 0.25),
+        panel.border = element_rect(color="black", size=1.2, linetype="solid"),
+        axis.ticks = element_line(colour = "black",size=1),
+        text=element_text(hjust = 0.5,family = TNM, face = "bold", size = 15))
+  # +
+  # geom_text_repel(data = dataset, aes(x =logFC,y = -log10(P.Value),label = label),
+  #                 size = 3,box.padding = unit(0.5, "lines"),
+  #                 point.padding = unit(0.8, "lines"),
+  #                 segment.color = "black",
+  #                 show.legend = FALSE,
+  #                 family=TNM
+  # )
+
+
+#ggsave('/data/SD_vol.png',p)
+
+
+```
+
+```{r}
+supplement <- getBM(attributes =c("ensembl_gene_id",'entrezgene_id',"description"),filters = "ensembl_gene_id",values =c(rownames(output_up_SD1),rownames(output_down_SD1)),mart = ensembl)
+b<-supplement[complete.cases(supplement),]
+
+EN_ID<-data.frame(b$entrezgene_id)
+kegg <- enrichKEGG(EN_ID$b.entrezgene_id, organism='osa', pvalueCutoff=0.05, pAdjustMethod="BH", qvalueCutoff=0.05)
+gg<-as.data.frame(kegg@result)
+```
+
+```{r}
+
+dd <- c(gg[1:10,2],dd)
+#cc <- data.frame(cc)
+dd <- data.frame(dd)
+write.table(dd,'/data/dd.txt',quote = F,col.names = F,row.names = F)
+```
